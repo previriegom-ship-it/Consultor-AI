@@ -196,6 +196,7 @@ export default function ConsultorIA() {
               )
           ),
           system: SYSTEM_PROMPT,
+          max_tokens: 6000,
         }),
       });
 
