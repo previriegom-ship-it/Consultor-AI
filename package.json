@@ -1,12 +1,19 @@
 {
-  "name": "consultor-ai-worker",
+  "name": "consultor-ai",
   "version": "1.0.0",
-  "description": "Cloudflare Worker — Consultor IA directo a Anthropic API",
-  "type": "module",
+  "private": true,
   "scripts": {
-    "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
-    "tail": "wrangler tail"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "worker:dev": "wrangler dev src/index.js",
+    "worker:deploy": "wrangler deploy"
+  },
+  "dependencies": {
+    "next": "14.2.3",
+    "react": "^18",
+    "react-dom": "^18"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240605.0",

@@ -1,7 +1,20 @@
-node_modules/
+# Next.js
+.next/
+out/
+
+# Cloudflare Worker
 .wrangler/
 dist/
+
+# Dependencies
+node_modules/
+
+# Env
 .env
 .env.local
+.env*.local
+.dev.vars
+
+# Misc
 *.log
 .DS_Store
