@@ -1,0 +1,15 @@
+{
+  "name": "consultor-ai-worker",
+  "version": "1.0.0",
+  "description": "Cloudflare Worker — Consultor IA directo a Anthropic API",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20240605.0",
+    "wrangler": "^3.62.0"
+  }
+}
