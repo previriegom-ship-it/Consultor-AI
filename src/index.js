@@ -38,7 +38,10 @@ export default {
       return handleChat(request, env);
     }
 
-    return new Response("Not found", { status: 404 });
+    return new Response(JSON.stringify({ error: "Not found", path: url.pathname }), {
+      status: 404,
+      headers: { "Content-Type": "application/json", ...corsHeaders() },
+    });
   },
 };
 
@@ -143,7 +146,7 @@ function corsHeaders() {
 }
 
 // ---------------------------------------------------------------------------
-// Frontend HTML
+// Frontend HTML (fallback — el frontend real está en GitHub Pages)
 // ---------------------------------------------------------------------------
 
 function getHTML() {
@@ -151,191 +154,12 @@ function getHTML() {
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Consultor IA</title>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
-
-    .card {
-      background: #fff;
-      border-radius: 14px;
-      box-shadow: 0 12px 48px rgba(0,0,0,.22);
-      width: 100%;
-      max-width: 620px;
-      padding: 36px;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-    }
-
-    h1 { font-size: 26px; color: #222; }
-    .subtitle { font-size: 13px; color: #777; margin-top: 4px; }
-
-    .chat {
-      background: #f6f6f8;
-      border-radius: 10px;
-      padding: 14px;
-      min-height: 160px;
-      max-height: 340px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .msg {
-      padding: 10px 14px;
-      border-radius: 8px;
-      font-size: 13.5px;
-      line-height: 1.5;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    .msg.user      { background: #667eea; color: #fff; align-self: flex-end; max-width: 85%; }
-    .msg.assistant { background: #e8e8ee; color: #222; align-self: flex-start; max-width: 85%; }
-
-    .input-row {
-      display: flex;
-      gap: 10px;
-    }
-
-    input[type="text"] {
-      flex: 1;
-      border: 1px solid #ddd;
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 14px;
-      outline: none;
-      transition: border-color .2s;
-    }
-    input[type="text"]:focus { border-color: #667eea; }
-
-    button {
-      background: #667eea;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      padding: 10px 20px;
-      font-size: 14px;
-      font-weight: 600;
-      cursor: pointer;
-      transition: background .2s;
-      white-space: nowrap;
-    }
-    button:hover    { background: #5566d4; }
-    button:disabled { background: #bbb; cursor: not-allowed; }
-
-    .status { font-size: 12px; color: #999; min-height: 16px; }
-
-    .error-box {
-      background: #fff0f0;
-      color: #c33;
-      border-radius: 8px;
-      padding: 10px 14px;
-      font-size: 13px;
-      display: none;
-    }
-  </style>
+  <title>Consultor IA — Worker</title>
 </head>
 <body>
-  <div class="card">
-    <div>
-      <h1>🤖 Consultor IA</h1>
-      <p class="subtitle">Asistente experto en financiamiento y emprendimiento</p>
-    </div>
-
-    <div class="error-box" id="errorBox"></div>
-
-    <div class="chat" id="chat"></div>
-
-    <div class="input-row">
-      <input
-        type="text"
-        id="input"
-        placeholder="Escribe tu pregunta..."
-        autocomplete="off"
-      />
-      <button id="btn">Enviar</button>
-    </div>
-
-    <div class="status" id="status"></div>
-  </div>
-
-<script>
-  const chatEl   = document.getElementById("chat");
-  const inputEl  = document.getElementById("input");
-  const btnEl    = document.getElementById("btn");
-  const statusEl = document.getElementById("status");
-  const errorEl  = document.getElementById("errorBox");
-
-  const SYSTEM = "Eres un consultor experto en financiamiento, grants e inversión para emprendedores. Responde de forma clara, práctica y concisa en español.";
-  let messages = [];
-
-  function addMsg(role, text) {
-    const el = document.createElement("div");
-    el.className = "msg " + role;
-    el.textContent = text;
-    chatEl.appendChild(el);
-    chatEl.scrollTop = chatEl.scrollHeight;
-  }
-
-  async function send() {
-    const text = inputEl.value.trim();
-    if (!text) return;
-
-    addMsg("user", text);
-    messages.push({ role: "user", content: text });
-    inputEl.value = "";
-
-    btnEl.disabled = true;
-    statusEl.textContent = "Pensando…";
-    errorEl.style.display = "none";
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages, system: SYSTEM }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Error " + res.status);
-      }
-
-      const reply = data.content[0].text;
-      addMsg("assistant", reply);
-      messages.push({ role: "assistant", content: reply });
-      statusEl.textContent = "✓";
-    } catch (err) {
-      errorEl.textContent = "❌ " + err.message;
-      errorEl.style.display = "block";
-      statusEl.textContent = "";
-    } finally {
-      btnEl.disabled = false;
-      inputEl.focus();
-    }
-  }
-
-  btnEl.addEventListener("click", send);
-  inputEl.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
-  });
-
-  // Mensaje inicial
-  addMsg("assistant", "👋 Hola, soy tu Consultor IA. Pregúntame sobre financiamiento, grants, inversión o cómo escalar tu emprendimiento.");
-</script>
+  <h1>✅ Worker activo</h1>
+  <p>Endpoint disponible: <code>POST /api/chat</code></p>
+  <p>Frontend: <a href="https://previriegom-ship-it.github.io/Consultor-AI/">GitHub Pages</a></p>
 </body>
 </html>`;
 }
