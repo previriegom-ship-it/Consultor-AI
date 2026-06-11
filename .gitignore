@@ -1,6 +1,7 @@
 # Next.js
 .next/
 out/
+# docs/ is intentionally NOT ignored (used for GitHub Pages)
 
 # Cloudflare Worker
 .wrangler/
