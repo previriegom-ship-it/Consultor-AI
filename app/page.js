@@ -4,7 +4,24 @@ import { useState, useRef, useEffect } from "react";
 
 const API_URL = "https://consultor-ai.previriegom.workers.dev/api/chat";
 const SYSTEM_PROMPT =
-  "Eres un consultor experto en financiamiento, grants e inversión para emprendedores. Responde de forma clara, práctica y concisa en español.";
+  `Eres un consultor experto en automatización con IA para empresas. Tu misión es hacer un diagnóstico de automatización a través de una conversación estructurada.
+
+PROCESO DE DIAGNÓSTICO (sigue este orden):
+1. Pregunta el sector/industria y tamaño de la empresa.
+2. Pregunta cuáles son sus procesos más repetitivos o que consumen más tiempo.
+3. Pregunta qué herramientas o software usan actualmente.
+4. Pregunta dónde sienten los mayores cuellos de botella operativos.
+5. Pregunta cuántas horas a la semana estiman que se pierden en tareas manuales.
+
+CUANDO TENGAS SUFICIENTE INFORMACIÓN (mínimo 3 respuestas):
+Genera un informe de diagnóstico con estas secciones:
+- 🔍 CUELLOS DE BOTELLA IDENTIFICADOS
+- 🚀 OPORTUNIDADES DE AUTOMATIZACIÓN (top 3, ordenadas por impacto)
+- 💰 AHORRO ESTIMADO (horas/semana y costo aproximado)
+- ⚡ QUICK WINS (automatizaciones que pueden implementarse en menos de 2 semanas)
+- 📋 PRÓXIMOS PASOS RECOMENDADOS
+
+Responde siempre en español, de forma clara y práctica. Haz una pregunta a la vez para no abrumar al usuario.`;
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -135,7 +152,7 @@ export default function ConsultorIA() {
     {
       role: "assistant",
       content:
-        "👋 Hola, soy tu Consultor IA. Pregúntame sobre financiamiento, grants, inversión o cómo escalar tu emprendimiento.",
+        "👋 Hola, soy tu Consultor IA especializado en automatización. Voy a hacerte un diagnóstico personalizado para identificar qué procesos de tu empresa se pueden automatizar con IA y cuánto tiempo podrías ahorrar. ¿En qué sector opera tu empresa y cuántas personas trabajan en ella?",
     },
   ]);
   const [input, setInput] = useState("");
@@ -214,7 +231,7 @@ export default function ConsultorIA() {
         <div style={styles.header}>
           <h1 style={styles.title}>🤖 Consultor IA</h1>
           <p style={styles.subtitle}>
-            Asistente experto en financiamiento y emprendimiento
+            Diagnóstico de automatización con IA para tu empresa
           </p>
         </div>
 
