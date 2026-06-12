@@ -94,7 +94,8 @@ const styles = {
   },
   inputRow: {
     display: "flex",
-    gap: "10px",
+    gap: "8px",
+    alignItems: "stretch",
   },
   input: {
     flex: 1,
@@ -129,6 +130,47 @@ const styles = {
     cursor: "not-allowed",
     whiteSpace: "nowrap",
   },
+  btnMic: {
+    background: "#667eea",
+    color: "#fff",
+    border: "none",
+    borderRadius: "8px",
+    padding: "10px 14px",
+    fontSize: "18px",
+    cursor: "pointer",
+    transition: "background .2s",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  btnMicListening: {
+    background: "#e53e3e",
+    color: "#fff",
+    border: "none",
+    borderRadius: "8px",
+    padding: "10px 14px",
+    fontSize: "18px",
+    cursor: "pointer",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+    animation: "pulse 1s infinite",
+  },
+  btnMicDisabled: {
+    background: "#bbb",
+    color: "#fff",
+    border: "none",
+    borderRadius: "8px",
+    padding: "10px 14px",
+    fontSize: "18px",
+    cursor: "not-allowed",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
   status: {
     fontSize: "12px",
     color: "#999",
@@ -140,6 +182,13 @@ const styles = {
     borderRadius: "8px",
     padding: "10px 14px",
     fontSize: "13px",
+  },
+  micErrorBox: {
+    background: "#fff8e1",
+    color: "#b45309",
+    borderRadius: "8px",
+    padding: "8px 12px",
+    fontSize: "12px",
   },
 };
 
@@ -159,8 +208,11 @@ export default function ConsultorIA() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [status, setStatus] = useState("");
+  const [isListening, setIsListening] = useState(false);
+  const [micError, setMicError] = useState(null);
   const chatRef = useRef(null);
   const inputRef = useRef(null);
+  const recognitionRef = useRef(null);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -169,15 +221,119 @@ export default function ConsultorIA() {
     }
   }, [messages]);
 
+  // Cleanup recognition on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+    };
+  }, []);
+
+  // ---------------------------------------------------------------------------
+  // Speech-to-text
+  // ---------------------------------------------------------------------------
+
+  function getSpeechRecognition() {
+    if (typeof window === "undefined") return null;
+    return window.SpeechRecognition || window.webkitSpeechRecognition || null;
+  }
+
+  function toggleListening() {
+    const SpeechRecognition = getSpeechRecognition();
+
+    if (!SpeechRecognition) {
+      setMicError("Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.");
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsListening(false);
+      setStatus("");
+      return;
+    }
+
+    setMicError(null);
+
+    const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+    recognition.lang = "es-ES";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      setStatus("🎤 Escuchando...");
+    };
+
+    recognition.onresult = (event) => {
+      let finalTranscript = "";
+      let interimTranscript = "";
+
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const t = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += t;
+        } else {
+          interimTranscript += t;
+        }
+      }
+
+      setInput(finalTranscript || interimTranscript);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      setStatus("");
+      inputRef.current?.focus();
+    };
+
+    recognition.onerror = (event) => {
+      setIsListening(false);
+      setStatus("");
+      if (event.error === "not-allowed" || event.error === "permission-denied") {
+        setMicError("Se requiere acceso al micrófono para usar esta función. Permite el permiso en tu navegador.");
+      } else if (event.error === "no-speech") {
+        setMicError("No se detectó voz. Intenta hablar más cerca del micrófono.");
+      } else if (event.error === "network") {
+        setMicError("Error de red al procesar el audio. Verifica tu conexión.");
+      } else {
+        setMicError(`Error de reconocimiento: ${event.error}`);
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch {
+      setMicError("No se pudo iniciar el micrófono. Intenta de nuevo.");
+      setIsListening(false);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Chat
+  // ---------------------------------------------------------------------------
+
   async function send() {
     const text = input.trim();
     if (!text || loading) return;
+
+    // Stop mic if active
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
 
     const userMsg = { role: "user", content: text };
     const nextMessages = [...messages, userMsg];
 
     setMessages(nextMessages);
     setInput("");
+    setMicError(null);
     setLoading(true);
     setError(null);
     setStatus("Pensando…");
@@ -187,13 +343,9 @@ export default function ConsultorIA() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          // Exclude the initial assistant greeting from the API call
           messages: nextMessages.filter(
             (m) =>
-              !(
-                m.role === "assistant" &&
-                m.content.startsWith("👋")
-              )
+              !(m.role === "assistant" && m.content.startsWith("👋"))
           ),
           system: SYSTEM_PROMPT,
           max_tokens: 6000,
@@ -225,64 +377,116 @@ export default function ConsultorIA() {
     }
   }
 
+  const speechSupported =
+    typeof window !== "undefined" &&
+    !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+
+  // ---------------------------------------------------------------------------
+  // Render
+  // ---------------------------------------------------------------------------
+
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
-        {/* Header */}
-        <div style={styles.header}>
-          <h1 style={styles.title}>🤖 Consultor IA</h1>
-          <p style={styles.subtitle}>
-            Diagnóstico de automatización con IA para tu empresa
-          </p>
-        </div>
+    <>
+      <style>{`
+        @keyframes pulse {
+          0%   { box-shadow: 0 0 0 0 rgba(229,62,62,0.55); }
+          70%  { box-shadow: 0 0 0 9px rgba(229,62,62,0); }
+          100% { box-shadow: 0 0 0 0 rgba(229,62,62,0); }
+        }
+      `}</style>
 
-        {/* Error */}
-        {error && <div style={styles.errorBox}>❌ {error}</div>}
+      <div style={styles.page}>
+        <div style={styles.card}>
 
-        {/* Chat */}
-        <div style={styles.chat} ref={chatRef}>
-          {messages.map((msg, i) => (
-            <div
-              key={i}
-              style={
-                msg.role === "user" ? styles.msgUser : styles.msgAssistant
-              }
-            >
-              {msg.content}
-            </div>
-          ))}
-          {loading && (
-            <div style={styles.msgAssistant}>
-              <em style={{ color: "#999" }}>Escribiendo…</em>
-            </div>
+          {/* Header */}
+          <div style={styles.header}>
+            <h1 style={styles.title}>🤖 Consultor IA</h1>
+            <p style={styles.subtitle}>
+              Diagnóstico de automatización con IA para tu empresa
+            </p>
+          </div>
+
+          {/* Chat error */}
+          {error && <div style={styles.errorBox}>❌ {error}</div>}
+
+          {/* Chat area */}
+          <div style={styles.chat} ref={chatRef}>
+            {messages.map((msg, i) => (
+              <div
+                key={i}
+                style={msg.role === "user" ? styles.msgUser : styles.msgAssistant}
+              >
+                {msg.content}
+              </div>
+            ))}
+            {loading && (
+              <div style={styles.msgAssistant}>
+                <em style={{ color: "#999" }}>Escribiendo…</em>
+              </div>
+            )}
+          </div>
+
+          {/* Mic error */}
+          {micError && (
+            <div style={styles.micErrorBox}>⚠️ {micError}</div>
           )}
-        </div>
 
-        {/* Input */}
-        <div style={styles.inputRow}>
-          <input
-            ref={inputRef}
-            type="text"
-            style={styles.input}
-            placeholder="Escribe tu pregunta…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKey}
-            disabled={loading}
-            autoComplete="off"
-          />
-          <button
-            style={loading ? styles.btnDisabled : styles.btnActive}
-            onClick={send}
-            disabled={loading}
-          >
-            {loading ? "…" : "Enviar"}
-          </button>
-        </div>
+          {/* Input row */}
+          <div style={styles.inputRow}>
+            <input
+              ref={inputRef}
+              type="text"
+              style={styles.input}
+              placeholder={
+                isListening
+                  ? "Escuchando… habla ahora"
+                  : "Escribe tu respuesta o usa 🎤…"
+              }
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKey}
+              disabled={loading}
+              autoComplete="off"
+            />
 
-        {/* Status */}
-        <div style={styles.status}>{status}</div>
+            {/* Mic button */}
+            <button
+              style={
+                loading
+                  ? styles.btnMicDisabled
+                  : isListening
+                  ? styles.btnMicListening
+                  : styles.btnMic
+              }
+              onClick={toggleListening}
+              disabled={loading}
+              title={
+                !speechSupported
+                  ? "Reconocimiento de voz no disponible en este navegador"
+                  : isListening
+                  ? "Detener grabación (haz clic para parar)"
+                  : "Dictar respuesta por voz"
+              }
+              aria-label={isListening ? "Detener grabación" : "Iniciar grabación de voz"}
+            >
+              {isListening ? "⏹" : "🎤"}
+            </button>
+
+            {/* Send button */}
+            <button
+              style={loading ? styles.btnDisabled : styles.btnActive}
+              onClick={send}
+              disabled={loading}
+            >
+              {loading ? "…" : "Enviar"}
+            </button>
+          </div>
+
+          {/* Status */}
+          <div style={styles.status}>{status}</div>
+
+        </div>
       </div>
-    </div>
+    </>
   );
 }
