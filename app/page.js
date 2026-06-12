@@ -156,7 +156,7 @@ const styles = {
     alignItems: "center",
     justifyContent: "center",
     flexShrink: 0,
-    animation: "pulse 1s infinite",
+    animation: "pulse 1.2s ease-in-out infinite",
   },
   btnMicDisabled: {
     background: "#bbb",
@@ -175,6 +175,12 @@ const styles = {
     fontSize: "12px",
     color: "#999",
     minHeight: "16px",
+  },
+  statusListening: {
+    fontSize: "12px",
+    color: "#e53e3e",
+    minHeight: "16px",
+    fontWeight: 500,
   },
   errorBox: {
     background: "#fff0f0",
@@ -210,9 +216,20 @@ export default function ConsultorIA() {
   const [status, setStatus] = useState("");
   const [isListening, setIsListening] = useState(false);
   const [micError, setMicError] = useState(null);
+
   const chatRef = useRef(null);
   const inputRef = useRef(null);
   const recognitionRef = useRef(null);
+
+  // These refs let event handlers (closures) read current values without stale state
+  const isListeningRef = useRef(false);   // mirrors isListening for use inside callbacks
+  const baseTextRef = useRef("");          // text in input when mic session started
+  const sessionFinalRef = useRef("");      // accumulated final transcript this session
+
+  // Keep isListeningRef in sync
+  useEffect(() => {
+    isListeningRef.current = isListening;
+  }, [isListening]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -221,7 +238,7 @@ export default function ConsultorIA() {
     }
   }, [messages]);
 
-  // Cleanup recognition on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
@@ -239,66 +256,91 @@ export default function ConsultorIA() {
     return window.SpeechRecognition || window.webkitSpeechRecognition || null;
   }
 
-  function toggleListening() {
+  function startRecognition() {
     const SpeechRecognition = getSpeechRecognition();
-
-    if (!SpeechRecognition) {
-      setMicError("Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge.");
-      return;
-    }
-
-    if (isListening) {
-      if (recognitionRef.current) {
-        recognitionRef.current.stop();
-      }
-      setIsListening(false);
-      setStatus("");
-      return;
-    }
-
-    setMicError(null);
+    if (!SpeechRecognition) return;
 
     const recognition = new SpeechRecognition();
     recognitionRef.current = recognition;
+
     recognition.lang = "es-ES";
-    recognition.interimResults = true;
-    recognition.continuous = false;
+    recognition.continuous = true;       // don't auto-stop on silence
+    recognition.interimResults = true;   // show text as you speak
     recognition.maxAlternatives = 1;
 
     recognition.onstart = () => {
       setIsListening(true);
-      setStatus("🎤 Escuchando...");
+      isListeningRef.current = true;
     };
 
     recognition.onresult = (event) => {
-      let finalTranscript = "";
-      let interimTranscript = "";
+      let newFinal = "";
+      let interim = "";
 
+      // Walk only the new results since the last event
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const t = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          finalTranscript += t;
+          newFinal += t;
         } else {
-          interimTranscript += t;
+          interim += t;
         }
       }
 
-      setInput(finalTranscript || interimTranscript);
+      // Append newly confirmed words to the session accumulator
+      if (newFinal) {
+        sessionFinalRef.current =
+          sessionFinalRef.current
+            ? sessionFinalRef.current + " " + newFinal
+            : newFinal;
+      }
+
+      // Build the full input value:
+      //   [text before mic started] + [confirmed this session] + [in-progress word(s)]
+      const confirmed = sessionFinalRef.current;
+      const live = interim;
+      const combined =
+        baseTextRef.current +
+        (baseTextRef.current && (confirmed || live) ? " " : "") +
+        (confirmed && live ? confirmed + " " + live : confirmed + live);
+
+      setInput(combined.trimStart());
     };
 
     recognition.onend = () => {
-      setIsListening(false);
-      setStatus("");
-      inputRef.current?.focus();
+      // If the user hasn't pressed stop, restart automatically.
+      // Chrome/Edge terminate continuous sessions after ~60 s of audio or
+      // when the tab loses focus; this keeps the session alive.
+      if (isListeningRef.current) {
+        try {
+          recognition.start();
+        } catch {
+          // Recognition object can't be restarted — create a fresh one
+          startRecognition();
+        }
+      } else {
+        setStatus("");
+        inputRef.current?.focus();
+      }
     };
 
     recognition.onerror = (event) => {
+      // "no-speech" is not fatal in continuous mode — the browser fires it
+      // after a long silence window but we can just restart.
+      if (event.error === "no-speech") {
+        // onend will fire right after and restart us if still listening
+        return;
+      }
+
+      // Abort on real errors
+      isListeningRef.current = false;
       setIsListening(false);
       setStatus("");
+
       if (event.error === "not-allowed" || event.error === "permission-denied") {
-        setMicError("Se requiere acceso al micrófono para usar esta función. Permite el permiso en tu navegador.");
-      } else if (event.error === "no-speech") {
-        setMicError("No se detectó voz. Intenta hablar más cerca del micrófono.");
+        setMicError(
+          "Se requiere acceso al micrófono para usar esta función. Permite el permiso en tu navegador."
+        );
       } else if (event.error === "network") {
         setMicError("Error de red al procesar el audio. Verifica tu conexión.");
       } else {
@@ -311,11 +353,46 @@ export default function ConsultorIA() {
     } catch {
       setMicError("No se pudo iniciar el micrófono. Intenta de nuevo.");
       setIsListening(false);
+      isListeningRef.current = false;
     }
   }
 
+  function toggleListening() {
+    const SpeechRecognition = getSpeechRecognition();
+
+    if (!SpeechRecognition) {
+      setMicError(
+        "Tu navegador no soporta reconocimiento de voz. Usa Chrome o Edge."
+      );
+      return;
+    }
+
+    if (isListening) {
+      // ── STOP ──
+      isListeningRef.current = false;
+      setIsListening(false);
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      // Sync the base so next mic press appends to current text
+      baseTextRef.current = inputRef.current?.value ?? input;
+      sessionFinalRef.current = "";
+      setStatus("");
+      return;
+    }
+
+    // ── START ──
+    setMicError(null);
+    // Snapshot whatever is already in the input box
+    baseTextRef.current = input;
+    sessionFinalRef.current = "";
+    isListeningRef.current = true;
+    setStatus("🎤 Escuchando… (presiona ⏹ para parar)");
+    startRecognition();
+  }
+
   // ---------------------------------------------------------------------------
-  // Chat
+  // Chat send
   // ---------------------------------------------------------------------------
 
   async function send() {
@@ -323,9 +400,12 @@ export default function ConsultorIA() {
     if (!text || loading) return;
 
     // Stop mic if active
-    if (isListening && recognitionRef.current) {
-      recognitionRef.current.stop();
+    if (isListening) {
+      isListeningRef.current = false;
       setIsListening(false);
+      if (recognitionRef.current) recognitionRef.current.stop();
+      baseTextRef.current = "";
+      sessionFinalRef.current = "";
     }
 
     const userMsg = { role: "user", content: text };
@@ -344,8 +424,7 @@ export default function ConsultorIA() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: nextMessages.filter(
-            (m) =>
-              !(m.role === "assistant" && m.content.startsWith("👋"))
+            (m) => !(m.role === "assistant" && m.content.startsWith("👋"))
           ),
           system: SYSTEM_PROMPT,
           max_tokens: 6000,
@@ -353,10 +432,7 @@ export default function ConsultorIA() {
       });
 
       const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || `Error ${res.status}`);
-      }
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
 
       const reply = data.content?.[0]?.text ?? "Sin respuesta.";
       setMessages((prev) => [...prev, { role: "assistant", content: reply }]);
@@ -389,8 +465,8 @@ export default function ConsultorIA() {
     <>
       <style>{`
         @keyframes pulse {
-          0%   { box-shadow: 0 0 0 0 rgba(229,62,62,0.55); }
-          70%  { box-shadow: 0 0 0 9px rgba(229,62,62,0); }
+          0%   { box-shadow: 0 0 0 0 rgba(229,62,62,0.6); }
+          60%  { box-shadow: 0 0 0 9px rgba(229,62,62,0); }
           100% { box-shadow: 0 0 0 0 rgba(229,62,62,0); }
         }
       `}</style>
@@ -427,9 +503,7 @@ export default function ConsultorIA() {
           </div>
 
           {/* Mic error */}
-          {micError && (
-            <div style={styles.micErrorBox}>⚠️ {micError}</div>
-          )}
+          {micError && <div style={styles.micErrorBox}>⚠️ {micError}</div>}
 
           {/* Input row */}
           <div style={styles.inputRow}>
@@ -439,11 +513,18 @@ export default function ConsultorIA() {
               style={styles.input}
               placeholder={
                 isListening
-                  ? "Escuchando… habla ahora"
+                  ? "Escuchando… habla con pausas naturales"
                   : "Escribe tu respuesta o usa 🎤…"
               }
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                // If user edits manually while not listening, update base
+                if (!isListeningRef.current) {
+                  baseTextRef.current = e.target.value;
+                  sessionFinalRef.current = "";
+                }
+              }}
               onKeyDown={handleKey}
               disabled={loading}
               autoComplete="off"
@@ -464,8 +545,8 @@ export default function ConsultorIA() {
                 !speechSupported
                   ? "Reconocimiento de voz no disponible en este navegador"
                   : isListening
-                  ? "Detener grabación (haz clic para parar)"
-                  : "Dictar respuesta por voz"
+                  ? "Detener grabación"
+                  : "Dictar respuesta por voz (acumula texto)"
               }
               aria-label={isListening ? "Detener grabación" : "Iniciar grabación de voz"}
             >
@@ -483,7 +564,9 @@ export default function ConsultorIA() {
           </div>
 
           {/* Status */}
-          <div style={styles.status}>{status}</div>
+          <div style={isListening ? styles.statusListening : styles.status}>
+            {status}
+          </div>
 
         </div>
       </div>
