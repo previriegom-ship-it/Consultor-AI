@@ -3,7 +3,7 @@ import "./globals.css";
 export const metadata = {
   title: "Consultor IA",
   description:
-    "Asistente experto en financiamiento, grants e inversión para emprendedores.",
+    "Diagnóstico de automatización con IA para PyMEs.",
 };
 
 export default function RootLayout({ children }) {
